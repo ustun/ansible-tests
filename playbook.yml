@@ -1,0 +1,91 @@
+---
+# sudo /etc/init.d/vboxadd setup if there is a kernel upgrade
+# this requires apt-get install build-essential linux-headers-generic linux-headers-`uname -r` dkms
+# see: http://askubuntu.com/questions/98416/error-kernel-headers-not-found-but-they-are-in-place
+- hosts:
+    - vagrantpublic
+    - amazonmicro
+  sudo: yes
+  tasks:
+    - name: install python software properties
+      apt: pkg=python-software-properties state=present
+    - name: nginx etc. repo keys
+      apt_key: url=$item state=present
+      with_items:
+        - http://nginx.org/keys/nginx_signing.key
+        - http://www.rabbitmq.com/rabbitmq-signing-key-public.asc
+        - https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    - name: common dependencies
+      apt: pkg=python-pycurl state=present
+    - name: add rabbitmq repo
+      apt_repository: repo='deb http://www.rabbitmq.com/debian/ testing main' state=present
+      notify:
+          - refresh apt-get cache
+    - name: add nginx repo
+      apt_repository: repo='deb http://nginx.org/packages/ubuntu/ lucid nginx' state=present
+      notify:
+          - refresh apt-get cache
+    - name: add postgresql repo
+      apt_repository: repo='deb http://apt.postgresql.org/pub/repos/apt/ precise-pgdg main' state=present
+      notify:
+          - refresh apt-get cache
+    - name: ensure apt-cache is up-to-date
+      apt: cache_valid_time=10 update_cache=yes
+    # - name: ensure apt-get upgrade is called (for safe)
+    #   apt: upgrade=yes
+    - name: ensure ntpd is at the latest version
+      apt: pkg=ntp state=latest
+      notify:
+      - restart ntpd
+    - name: ensure nginx is at the latest version
+      apt: pkg=nginx state=latest
+    - name: ensure a few things are installed
+      apt: pkg=$item state=latest
+      with_items:
+        - iotop
+        - iftop
+        - htop
+        - zile
+        - jed
+        - mc
+        - tmux
+        - build-essential
+        - rabbitmq-server
+        - postgresql-9.3
+        - supervisor
+        - libpq-dev
+        - python-dev
+        - python-psycopg2
+        - python-dev
+      notify:
+        - another custom handler
+    - name: Install setup tools
+      shell: creates=/usr/local/lib/python2.7/dist-packages/setuptools-1.1.6-py2.7.egg
+        wget https://bitbucket.org/pypa/setuptools/raw/bootstrap/ez_setup.py -O - | python
+    - name: install pip
+      easy_install: name=pip
+    - name: install virtualenv
+      command: creates=/usr/local/lib/python2.7/dist-packages/virtualenv.py
+        pip install virtualenv
+    - name: create deploy user
+      user: name=deploy shell=/bin/zsh state=present
+    # - name: create virtualenv for user
+    #   sudo_user: deploy
+    #   command: virtualenv /hpme/deploy/venv creates=/home/deploy/venv
+    # - name: upload requirements.txt for virtualenv
+    #   sudo_user: deploy
+    #   copy: src=requirements.txt dest=/home/deploy/requirements.txt
+    - name: install required dependencies
+      sudo_user: deploy
+      pip: requirements=/www/sellercrowd/requirements.txt virtualenv=/home/deploy/venv
+    # - name: Mount code folder.
+    #   mount: fstype=vboxsf opts=uid=deploy,gid=deploy name=/www/sellercrowd/ src=/Users/ustun/scv/sellercrowd state=mounted
+      # only_if: "$vm == 1"
+  handlers:
+    - name: restart ntpd
+      service: name=ntpd state=restarted
+    - name: another custom handler
+      shell: touch ~/customhandlerran.log
+      sudo: no
+    - name: refresh apt-get cache
+      apt: update_cache=yes
